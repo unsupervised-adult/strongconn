@@ -2,8 +2,8 @@
 # StrongSwan IkeV2 VPN Access Gateway, User Pubkey & Okta Authentication
 This repository provides scripts and instructions to configure and manage a StrongSwan IkeV2 VPN Gateway with Suricata IDS. It includes a dynamic Python script to manage and blacklist traffic. Syslog-ng is auto-configured to forward logs to a syslog server. IPsec client authentication supports both public key (Pubkey) and Okta authentication.
 
-The server is configured to operate within a NAT environment on a Virtual Machine. If you plan to expose the server directly to the internet, update nftables accordingly. SSH and Cockpit are enabled on the public chain; you may want to disable Cockpit.
-**Note**: This setup is designed for a single-interface VM to automatically configure a VPN Gateway using UDP ports 4500 and 500, ESP protocol 50, and TCP port 80.
+The server is configured to operate within a NAT environment on a Virtual Machine. If you plan to expose the server directly to the internet, update nftables accordingly. SSH and Cockpit are enabled on the public chain; you may want to disable Cockpit.<br>
+**Note**: This setup is designed for a single-interface VM to automatically configure a VPN Gateway using UDP ports 4500 and 500, ESP protocol 50, and TCP port 80.<br>
 
 **Important**: Ensure you have an SSH key installed for SSH access before starting the installation.
 
