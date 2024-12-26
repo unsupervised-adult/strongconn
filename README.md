@@ -25,7 +25,7 @@ sudo hostnamectl set-hostname hostname.example.com
 ```
 
 ```bash
-sudo apt-get install git -y && sudo apt-get update -y && git clone https://github.com/IrritatedPirateSneeze/IkeV2-Okta && cd ./IkeV2-Okta && chmod +x ./strongconn.sh && sudo ./strongconn.sh -install
+sudo apt-get install git -y && sudo apt-get update -y && git clone https://github.com/unsupervised-adult/strongconn && cd ./IkeV2-Okta && chmod +x ./strongconn.sh && sudo ./strongconn.sh -install
 ```
 
 When the installer begins, it will ask for the routing mode. You have three options:
