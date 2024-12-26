@@ -1993,10 +1993,10 @@ secrets {
 authorities {
     vpn-ca {
         cacert = /etc/swanctl/x509ca/ca.pem
-        ocsp_uris = [ "http://$PUBLIC_IP:2560" ]
+        ocsp_uris = [ "http://$PUBLIC_IP/ocsp" ]
     }
 }
-include conf.d/*.conf
+
 "
 
     local PUBKEY_CONFIG="
@@ -2050,7 +2050,7 @@ secrets {
 authorities {
     vpn-ca {
         cacert = /etc/swanctl/x509ca/ca.pem
-        ocsp_uris = [ "http://$PUBLIC_IP:2560" ]
+        ocsp_uris = [ "http://$PUBLIC_IP/ocsp" ]
     }
 }
 include conf.d/*.conf
@@ -2148,10 +2148,10 @@ secrets {
 authorities {
     vpn-ca {
         cacert = /etc/swanctl/x509ca/ca.pem
-        ocsp_uris = [ "http://$PUBLIC_IP/2560" ]
+        ocsp_uris = [ "http://$PUBLIC_IP/ocsp" ]
     }
 }
-include conf.d/*.conf
+
 
 "
     if [ "$1" == "okta" ]; then
