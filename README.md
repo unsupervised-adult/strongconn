@@ -10,7 +10,7 @@ The server is configured to operate within a NAT environment on a Virtual Machin
 ## Prerequisites
 
 - **Operating System**: Debian 12+
-- **CPU**: 2-4 cores
+- **CPU**: 2-12 cores
 - **Memory**: 2 GB RAM or more
 - **Storage**: 15 GB HDD
 
@@ -25,7 +25,7 @@ sudo hostnamectl set-hostname hostname.example.com
 ```
 
 ```bash
-sudo apt-get install git -y && sudo apt-get update -y && git clone https://github.com/unsupervised-adult/strongconn && cd ./strongconn && chmod +x ./strongconn.sh ./ikpki.sh  && sudo ./strongconn.sh -install
+sudo apt-get install git -y && sudo apt-get update -y && git clone https://github.com/IrritatedPirateSneeze/IkeV2-Okta && cd ./IkeV2-Okta && chmod +x ./strongconn.sh && sudo ./strongconn.sh -install
 ```
 
 When the installer begins, it will ask for the routing mode. You have three options:
@@ -246,24 +246,21 @@ sudo less /var/log/swanctl_user_check.log
 - **Log File**: The script logs operations to `/var/log/swanctl_user_check.log`.
 - **Debug Mode**: Set `DEBUG_MODE = True` for detailed logging. Set it to `False` to stop logging. The `DEBUG` option is in `strongconn.conf`, set to `false` or `true`.
 
-### Suricata Configuration;
+## Suricata Configuration;
 
 Suricata is installed in IDS mode.
 
-**Watchdog Script for Dynamic Blocking of Suricata IDS Alerts**
+**Watchdog Script for Dynamic Blocking of Suricata IDS Alerts** <br>
+Events log into Suricata to `/var/log/suricata/fast.log`.<br>
 
-Events log into Suricata to `/var/log/suricata/fast.log`.
+The `suricata_watchdog.py` script in `/var/lib/strongswan` dynamically responds to Suricata IDS alerts by blocking suspicious IPs based on network intrusion detections.<br>
 
-The `suricata_watchdog.py` script in `/var/lib/strongswan` is designed to dynamically respond to Suricata IDS alerts by blocking suspicious or potentially malicious IPs based on network intrusion detections.
+This Python script monitors the `eve.json` log file for new entries and blacklists IP addresses based on classifications and internal network rules. It will blacklist an IP address if it matches the classification and is not in the `whitelisted_ips` set in the server's nftables firewall. The blacklist duration is set in the configuration file as `BLACKLIST_TIMEOUT=7d`.
 
-This Python script acts as a watchdog for the Suricata IDS, blocking malicious traffic based on classification and internal network rules. It monitors the `eve.json` log file for new entries and blacklists IP addresses based on entries in the classification file. When a log entry is detected and matches the classification, the script will blacklist the source or destination IP address based on the traffic direction, i.e., inbound or outbound. The script will only blacklist an IP address if it is not in the internal network, excluding IP addresses in the `whitelisted_ips` set in the server's nftables firewall. The blacklist duration is set in the configuration file as `BLACKLIST_TIMEOUT=7d`. By adjusting the Suricata YAML and classification file, you can modify the severity of classifications and the sensitivity of the IDS. The script will only blacklist an IP address if the classification is in the `classifications.conf` file and the IP address is not in the `whitelisted_ips` set.
-
-To confirm Python script actions, tail the below log file or run debug:
-
+To confirm script actions, tail the log file or run debug:
 ```bash
 tail -f /var/log/suricata_watchdog_actions/action.log
 ```
-
 Blocking is done via a blacklist nft avoiding reloading. After some time, you should see entries added to the blacklist when you run debug or list ruleset.
 
 ## Cockpit Module;
@@ -292,10 +289,10 @@ sudo strongconn.sh -update
 
 To import the P12 certificate to either the machine or user certificate store, follow these steps:
 
-1. Locate the P12 certificate file within the .tgz archive.
-2. Right-click on the P12 certificate file and select "Import".
-3. Follow the on-screen instructions to complete the import process.
-4. When prompted, enter the password associated with the certificate.
+. Locate the P12 certificate file within the .tgz archive.
+. Right-click on the P12 certificate file and select "Import".
+. Follow the on-screen instructions to complete the import process.
+. When prompted, enter the password associated with the certificate.
 
 The .tgz archive will also contain a PowerShell script tailored for your concentrator for public key authentication and extracted certs.
 
@@ -404,4 +401,3 @@ A configuration file is created in /etc/swanctl/conf.d/site-to-site$name, contai
 IPsec Policies and States:
 
 IPsec policies, states, and OSPF routes are set up dynamically by the updwn script for encryption and decryption of traffic between the local and remote subnets. These configurations route selected traffic to pass through the site-to-site connection.
-
