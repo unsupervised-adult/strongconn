@@ -674,6 +674,7 @@ generate_client() {
         --flag keyAgreement \
         --flag clientAuth \
         --flag ipsecClient \
+        --flag ipsecEndSystem \
         --serial "$SERIAL_NUMBER" \
         --san "$email" \
         --outform pem > "$CLIENT_CERT_FILE" || error_exit "Failed to issue client certificate."

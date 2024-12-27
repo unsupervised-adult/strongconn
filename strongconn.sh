@@ -1171,7 +1171,8 @@ ExecStart=/usr/bin/openssl ocsp \
     -timeout 60 \
     -nrequest 100 \
     -port $OCSP_PORT \
-    -no_nonce
+    -no_nonce \
+    -verbose 
 
 Restart=on-failure
 User=ocsp
@@ -1208,7 +1209,7 @@ LOGFILE="/var/log/update_crl_and_restart_ocsp.log"
 echo "=== CRL Update Started: $(date) ===" >> "$LOGFILE"
 
 # Update CRL
-/path/to/ikpki.sh generate-crl full >> "$LOGFILE" 2>&1
+/usr/bin/ikpki.sh generate-crl full >> "$LOGFILE" 2>&1
 if [[ $? -eq 0 ]]; then
     echo "CRL updated successfully." >> "$LOGFILE"
 else
