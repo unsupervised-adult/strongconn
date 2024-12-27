@@ -392,6 +392,8 @@ generate_ca() {
             --in "$CA_KEY" \
             --dn "C=$COUNTRY, ST=$STATE, L=$CITY, O=$ORGANIZATION, OU=$ORG_UNIT, CN=$CA_NAME" \
             --serial "$SERIAL_NUMBER" \
+            --flag ca \
+            --flag keyCertSign \
             --flag crlSign \
             --ocsp "http://$PUBLIC_IP/ocsp" \
             --outform pem > "$CA_CERT" || error_exit "Failed to generate CA certificate."
@@ -449,6 +451,10 @@ generate_server() {
         --crl "http://$PUBLIC_IP/crl/crl.pem" \
         --ocsp "http://$PUBLIC_IP/ocsp" \
         --lifetime "$VPN_DURATION" \
+        --flag ipsecTunnel \
+        --flag digitalSignature \
+        --flag keyEncipherment \
+        --flag keyAgreement \
         --flag serverAuth \
         --serial "$SERIAL_NUMBER" \
         --san "$PUBLIC_IP" \
@@ -664,7 +670,10 @@ generate_client() {
         --crl "http://$PUBLIC_IP/crl/crl.pem" \
         --ocsp "http://$PUBLIC_IP/ocsp" \
         --lifetime "$duration_days" \
+        --flag digitalSignature \
+        --flag keyAgreement \
         --flag clientAuth \
+        --flag ipsecClient \
         --serial "$SERIAL_NUMBER" \
         --san "$email" \
         --outform pem > "$CLIENT_CERT_FILE" || error_exit "Failed to issue client certificate."
@@ -864,6 +873,7 @@ generate_custom_server() {
             --ocsp "http://$PUBLIC_IP/ocsp" \
             --san "DNS:$DNS_NAME" \
             --lifetime "$VPN_DURATION" \
+            --flag ipsecTunnel \
             --flag serverAuth \
             --serial "$SERIAL_NUMBER" \
             --outform pem > "$SERVER_CERT_FILE" || error_exit "Failed to issue server certificate."
