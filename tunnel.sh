@@ -1,19 +1,32 @@
 #!/bin/bash
-# =================================================================================================
-# THIS SCRIPT IS PROVIDED AS IS WITH NO WARRANTY OR SUPPORT
-# StrongSwan Configuration IKEv2 Gateway
-# This file is used to manage a site to site tunnel for the StrongSwan IKEv2 Gateway
 # 
-# Notice:
-# This configuraton file and scripts are provided as is with no warranty or support
-# The author is not responsible for any damage or loss caused by the use of this script
-# Use at your own risk
+###################################################################################################
+# StrongSwan IKEv2 Site-to-Site VPN Tunnel Management Script
+###################################################################################################
+# Description:
+#   This script manages and configures site-to-site VPN tunnels between two StrongSwan IKEv2 
+#   gateways. It provides automated setup and management of IPsec connections using IKEv2 protocol.
 #
-# This script is designed to be used on Debian based virtualised vm only aws,vmware,proxmox etc
-# =================================================================================================
-# This script is used to configure a site-to-site VPN tunnel between two StrongSwan IKEv2 gateways.
-# this serires of scripts was created by Felix C Frank 2024
-# feedback mailto:felix.c.frank@proton.me
+# Usage:
+#   ./tunnel.sh [options]
+#
+# 
+#
+# Important Notes:
+#   - Requires root/sudo privileges
+#   
+#   
+#
+# Disclaimer:
+#   This script is provided as-is without warranty. Use at your own risk.
+#   Author assumes no liability for any damages or losses.
+#
+# Author: Felix C Frank
+# Email: felix.c.frank@proton.me
+# Version: 0.9
+# Created: 27-12-24
+###################################################################################################
+
 CONFIG_PATH="/etc/strongconn.conf"
 trap 'cleanup' ERR  # Catch errors for cleanup
 

@@ -1,19 +1,41 @@
 #!/bin/bash
+#
+# Script: strongconn.sh
+# Location: /strongconn/strongconn.sh
+#
+# Description:
+#   This script appears to be related to IKEv2 VPN connection management with Okta integration.
+#   Additional implementation details needed for more specific documentation.
+#
+# Usage:
+#   ./strongconn.sh -install -debug -update 
+#
+# Dependencies:
+#   1 strongconn.conf (configuration file) installer will create if not found and allow user to edit
+#     no validation is done on the values in the configuration file.
+#     do not change the directorys in the configuration file unless you know what you are doing
+#     you can change the okta variables post installation in the configuration file or not fill them in at all
+#     just make sure all the values like ip pub ip dns etc are correct before proceeeding with the installation.
+#
+#   2 Okta Auth Requires Okta Radius Agent to be installed Post Installation
+#     a signed valid TLS Certificate is required for Okta to function correctly
+#
+# Author: Felix C Frank 2024
+# Version: 0.9
+# Created: 27-12-24
+#
 # =================================================================================================
 # THIS SCRIPT IS PROVIDED AS IS WITH NO WARRANTY OR SUPPORT
-# StrongSwan Configuration IKEv2 Gateway
+# The author is not responsible for any damage or loss caused by the use of this script
+# Use at your own risk
+# 
 # This file is the main installation script for StrongSwan IKEv2 Server
 # it also has a series of helper functions to help with maintenance and configuration
 # 
-# Notice:
-# This configuraton file and scripts are provided as is with no warranty or support
-# The author is not responsible for any damage or loss caused by the use of this script
-# Use at your own risk
-#
 # This script is designed to be used on Debian based virtualised vm only aws,vmware,proxmox etc
 # =================================================================================================
 # 
-# this serires of scripts was created by Felix C Frank 2024
+# 
 # feedback mailto:felix.c.frank@proton.me
 # =================================================================================================
 CONFIG_PATH="/etc/strongconn.conf"
@@ -83,7 +105,7 @@ kernel_updates() {
 install_helper(){
     if [ ! -f "$HELPER_PATH/ikpki.sh" ]; then
         echo "ikpki.sh file not found. Creating default helper file..."
-    cd ~/ || error_exit
+    cd ~/ || error_exit "Failed to change directory to home"
     cd "$SCRIPT_DIR" || error_exit "failed to return to script dir"
     cp ./ikpki.sh /usr/bin/ikpki.sh || error_exit "failed to copy helper to /usr/bin"
     chmod 600 /usr/bin/ikpki.sh || error_exit "failed to set helper permissions"
@@ -197,7 +219,7 @@ check_dns_resolution() {
 
 check_root() {
     if [ "$(id -u)" != 0 ]; then
-        exiterr "Script must be run as root. Try 'bash $0'."
+        error_exit "Script must be run as root. Try 'bash $0'."
     fi
 }
 
@@ -442,7 +464,7 @@ init_db() {
     /usr/bin/ikpki.sh check
     /usr/bin/ikpki.sh init
 
-    log "directorys initialized successfully."
+    log "directories initialized successfully."
 }
 
 
@@ -470,9 +492,7 @@ generate_server() {
     fi
     /usr/bin/ikpki.sh generate-server || error_exit "Failed to generate server certificate"
    # /usr/bin/ikpki.sh generate-custom-server || error_exit "Failed to generate testing TLS certificate"
-        log "Server certificates successfully generated."
-   # /usr/bin/ikpki.sh  generate-client admin@"$DNS_NAME" 120 || error_exit "Failed to generate admin user"
-   #     log "Admin user successfully generated."
+log "Server certificates successfully generated."
 }
 
 check_ip() {
@@ -1750,7 +1770,7 @@ restore_config() {
             rsync -a "$BACKUP_DIR/$BASENAME" "$(dirname "$ITEM")/"
             log "Restored $ITEM successfully."
         else
-            log "Warning: $ITEM does not exist in the backup. Skipping..."]
+            log "Warning: $ITEM does not exist in the backup. Skipping..."
     
         fi
         done
@@ -1792,7 +1812,7 @@ export_cert_to_p12_tar() {
     local TAR_FILE="${OUTPUT_DIR}/${DNS_NAME}_certs.tar.gz"
     local CERT_PATH="/etc/letsencrypt/live/${DNS_NAME}/fullchain.pem"
     local KEY_PATH="/etc/letsencrypt/live/${DNS_NAME}/privkey.pem"
-    local "$CONFIG_PATH"="/etc/strongconn.conf"
+    local CONFIG_PATH="/etc/strongconn.conf"
    
     if [ ! -f "$CERT_PATH" ] || [ ! -f "$KEY_PATH" ]; then
         echo "Certificate or key file not found for domain ${DNS_NAME}."
@@ -1993,7 +2013,7 @@ secrets {
 authorities {
     vpn-ca {
         cacert = /etc/swanctl/x509ca/ca.pem
-        ocsp_uris = [ "http://$PUBLIC_IP/ocsp" ]
+        ocsp_uris = [ "http://$PUBLIC_IP:2560" ]
     }
 }
 
@@ -2050,10 +2070,10 @@ secrets {
 authorities {
     vpn-ca {
         cacert = /etc/swanctl/x509ca/ca.pem
-        ocsp_uris = [ "http://$PUBLIC_IP/ocsp" ]
+        ocsp_uris = [ "http://$PUBLIC_IP:2560" ]
     }
 }
-include conf.d/*.conf
+
 "
 
     local BOTH_CONFIG="
@@ -2148,7 +2168,7 @@ secrets {
 authorities {
     vpn-ca {
         cacert = /etc/swanctl/x509ca/ca.pem
-        ocsp_uris = [ "http://$PUBLIC_IP/ocsp" ]
+        ocsp_uris = [ "http://$PUBLIC_IP/2560" ]
     }
 }
 
@@ -2482,7 +2502,7 @@ After=network.target suricata.service
 [Service]
 Type=simple
 User=root
-ExecStart=/usr/bin/env python3 /var/lib/strongswan/suricata_watchdog.py
+ExecStart=/usr/bin/python3 /var/lib/strongswan/suricata_watchdog.py
 Restart=on-failure
 RestartSec=5s
 
@@ -2745,6 +2765,7 @@ MaxSessions 2
 PubkeyAuthentication yes
 AuthorizedKeysFile .ssh/authorized_keys
 PasswordAuthentication no
+PermitEmptyPasswords no
 HostbasedAuthentication no
 ChallengeResponseAuthentication no
 KbdInteractiveAuthentication no
@@ -2781,8 +2802,8 @@ EOF
 
     echo "Configuring Fail2Ban to add banned IPs to nftables set 'blacklisted_ips' with a timeout..."
     cat << EOF | tee /etc/fail2ban/jail.local
-[DEFAULT]
-bantime = 10m
+bantime = 1h
+findtime = 10m
 findtime = 10m
 maxretry = 5
 
@@ -2863,10 +2884,10 @@ EOF
         echo "Configuring GRUB password..."
 
             hashed_password=$(echo -e "$GRUB_PSSWD\n$GRUB_PSSWD" | grub-mkpasswd-pbkdf2 | awk '/PBKDF2 hash of your password is/ {print $NF}')
-
+            
             if [ -z "$hashed_password" ]; then
-                echo "Warning: Could not generate PBKDF2 hash for GRUB password. Ensure grub-mkpasswd-pbkdf2 output is correct."
-                return 1
+                echo "Error: Could not generate PBKDF2 hash for GRUB password. Ensure grub-mkpasswd-pbkdf2 output is correct."
+                exit 1
             fi
 
             cp /etc/grub.d/40_custom /etc/grub.d/40_custom.bak
@@ -3292,6 +3313,12 @@ case "$1" in
             export DEBIAN_FRONTEND=noninteractive
             apt-get update -y && apt-get install -y dialog || {
                 echo "ERROR: Failed to install 'dialog'. Exiting."
+                exit 1
+            }
+            echo "DEBUG: 'dialog' installed successfully."
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -y && apt-get install -y dialog || {
+                echo "ERROR: Failed to install 'dialog'. Exiting."
                 
                 exit 1
             }
@@ -3357,14 +3384,28 @@ case "$1" in
         dialog --backtitle "Strongswan Ipsec Gateway Installer" \
             --yesno "Start Installation?" 8 50
 
-        if [ $? -ne 0 ]; then
-            echo "Installation cancelled by user."
-            
-            error_exit "Installation cancelled by user."
-        fi
-
         # Check for SSH keys
         ssh_keycheck
+        if [ "$KEY_INSTALLED" != "true" ]; then
+            dialog --backtitle "StrongSwan VPN Gateway Setup" \
+                --msgbox "No SSH keys found. Please install an SSH key before continuing." 8 50 
+
+            error_exit "No SSH keys found. Please install an SSH key before continuing."
+        fi
+
+        # Ensure dialog is installed
+        if ! command -v dialog >/dev/null 2>&1; then
+            echo "DEBUG: 'dialog' not found. Installing..."
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -y && apt-get install -y dialog || {
+                echo "ERROR: Failed to install 'dialog'. Exiting."
+                
+                exit 1
+            }
+            echo "DEBUG: 'dialog' installed successfully."
+        else
+            echo "DEBUG: 'dialog' is already installed."
+        fi
         if [ "$KEY_INSTALLED" != "true" ]; then
             dialog --backtitle "StrongSwan VPN Gateway Setup" \
                 --msgbox "No SSH keys found. Please install an SSH key before continuing." 8 50 

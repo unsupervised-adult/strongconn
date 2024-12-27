@@ -1,7 +1,5 @@
-import json
-import socket
-import os
-from datetime import datetime
+#!/usr/bin/env python3
+
 # =================================================================================================
 # THIS SCRIPT IS PROVIDED AS IS WITH NO WARRANTY OR SUPPORT
 # suricata-eve-test-event.py
@@ -19,7 +17,13 @@ from datetime import datetime
 # this serires of scripts was created by Felix C Frank 2024
 # feedback mailto:felix.c.frank@proton.me
 # =================================================================================================
-# Function to get the current timestamp in the required format
+
+
+import json
+import socket
+import os
+from datetime import datetime
+
 def get_current_timestamp():
     return datetime.now().strftime("%Y-%m-%dT%H:%M:%S.%f+0000")[:-3]
 

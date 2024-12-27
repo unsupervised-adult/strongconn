@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
-import json
-import time
-import subprocess
-import os
-import re
-from datetime import datetime
-import ipaddress
-import inotify.adapters
-import sys
+
+
+
 # =================================================================================================
 # THIS SCRIPT IS PROVIDED AS IS WITH NO WARRANTY OR SUPPORT
+# The author is not responsible for any damage or loss caused by the use of this script
+# Use at your own risk
+#
 # StrongSwan Configuration IKEv2 Gateway
 # This Python script acts as a watchdog for the Suricata IDS, blocking malicious traffic
 # based on classification and internal network rules.
@@ -23,17 +20,24 @@ import sys
 # and the sensitivity of the IDS. The script will only blacklist an IP address if the classification
 # is in the classifications.conf file and the IP address is not in the whitelisted_ips set.
 # 
-# ****Notice:
-# This configuraton file and scripts are provided as is with no warranty or support
-# The author is not responsible for any damage or loss caused by the use of this script
-# Use at your own risk
 #
 # This script is designed to be used on Debian based virtualised vm only aws,vmware,proxmox etc
 # =================================================================================================
-# 
-# this serires of scripts was created by Felix C Frank 2024
+# Author: Felix C Frank 2024
+# Version: 0.9
+# Created: 27-12-24
 # feedback mailto:felix.c.frank@proton.me
 # =================================================================================================
+import json
+import time
+import subprocess
+import os
+import re
+from datetime import datetime
+import ipaddress
+import inotify.adapters
+import sys
+
 
 
 # Path to eve.json log file

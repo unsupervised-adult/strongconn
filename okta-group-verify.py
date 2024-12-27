@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
+#
 # =================================================================================================
 # THIS SCRIPT IS PROVIDED AS IS WITH NO WARRANTY OR SUPPORT
+# The author is not responsible for any damage or loss caused by the use of this script
+# Use at your own risk
+#
 # StrongSwan Configuration IKEv2 Gateway
 # This file is a secondary authentication script checking for connected user changes in Okta
 # this still needs work I find it occasionally disconnects users that are allowed to connect
@@ -14,15 +18,12 @@
 # =================================================================================================
 # it also has a series of helper functions to help with maintenance and configuration
 # 
-# *****Notice:
-# This configuraton file and scripts are provided as is with no warranty or support
-# The author is not responsible for any damage or loss caused by the use of this script
-# Use at your own risk
 #
 # This script is designed to be used on Debian based virtualised vm only aws,vmware,proxmox etc
 # =================================================================================================
-# 
-# this serires of scripts was created by Felix C Frank 2024
+# Author: Felix C Frank 2024
+# Version: 0.9
+# Created: 27-12-24
 # feedback mailto:felix.c.frank@proton.me
 # =================================================================================================
 import subprocess

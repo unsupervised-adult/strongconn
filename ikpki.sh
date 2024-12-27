@@ -1,18 +1,86 @@
 #!/bin/bash
-# =================================================================================================
+#
+#############################################################################@#
 # THIS SCRIPT IS PROVIDED AS IS WITH NO WARRANTY OR SUPPORT
-# 
-# Notice:
-# This configuraton file and scripts are provided as is with no warranty or support
 # The author is not responsible for any damage or loss caused by the use of this script
 # Use at your own risk
+###############################################################################
+# IKEv2-Okta PKI Management Script
+###############################################################################
 #
-# This script is designed to be used on Debian based virtualised vm only aws,vmware,proxmox etc
-# =================================================================================================
-# 
-# this serires of scripts was created by Felix C Frank 2024
-# feedback mailto:felix.c.frank@proton.me
-# =================================================================================================
+# Description:
+#   This script manages PKI (Public Key Infrastructure) operations for IKEv2-Okta
+#   integration, including certificate creation and management.
+#
+# Author: Felix C Frank
+# Contact: felix.c.frank@proton.me
+# Version: 1.0
+# Created: 2024
+#
+# Environment:
+#   Designed for Debian-based virtualized environments:
+#   - AWS
+#   - VMware
+#   - Proxmox
+#
+# Usage:
+# PKI Management:
+#   check           - Check environment and dependencies for PKI operations
+#   rebuild-crl     - Rebuild CRL database index.txt and number files from existing certificates (use with caution)
+#
+# Server Certificates:
+#   generate-ca         - Create & Replace Certificate Authority (CA) replaces existing CA root key & certificate invalidating all existing certificates
+#   generate-server     - Generate VPN CN=IP & SAN=IP server certificate pubkey auth 
+#   generate-ocsp-cert  - Create OCSP responder CN=IP certificate for OCSP validation run once after CA generation
+#   generate-csr DNS_NAME TYPE  - Generate CSR (internal|third-party) for CSR to be signed by third-party CA for production
+#   generate-custom-server      - Generate server CN=DNS & SAN=DNS name certificate from CA for testing okta integration
+#
+# Client Certificates:
+#   import-csv CSV_FILE          - Import client certificates from CSV file  basic csv format: email, duration
+#   generate-client EMAIL MONTHS - Create client certificate & set lifetime in months (default: 12)
+#   revoke-client EMAIL          - Revoke client certificate full crl update required after revocation
+#   export-bundle EMAIL          - Export client certificate bundle with ca client cert, key p12 bundle certificates.
+#                                  client installers powershell script for windows sswan for android and mobileconfig for ios
+#                                  bundle is only required for pubkey auth
+#
+# CRL Management:
+#  to initialize the CRL system, add new certificates, and revoke existing ones.
+#  generate-crl OPTION
+#        Options:
+#          full
+#             Generates new CRL updates the CRL index & restarts ocsp responder (run after adding or revoking certificates (a cron job is set to run every 17 days to keep crl updated)
+#          init
+#            Initializes the CRL environment, setting up necessary configurations. (do not run if you have existing certificates)
+#          add CERT_PATH
+#             Adds a new certificate to the CRL from the provided CERT_PATH.  (this is automatically done by generate-client)
+#          revoke CERT_NAME [REASON]
+#             Revokes the certificate identified by CERT_NAME with an optional REASON
+#          Revocation Reasons: 
+#                              1) superseded 2) keyCompromise 
+#                              3) affiliationChanged 4) cessationOfOperation 
+#                              5) certificateHold
+# Maintenance:
+#  list            - List all certificates
+#  set-permissions - Fix permissions for /opt/pki /etc/swanctl & /etc/ngnix/ to validate symlinks and replace them if necessary
+#                    function also sets ACLs for strongswan, ocsp, and nginx  to access necessary files and directories                 
+#
+# Dependencies:
+#   - OpenSSL
+#   - Standard Unix tools
+#
+# Notes:
+#   
+#   - Must be run with appropriate privileges
+#   - rebuild-crl should be run with caution and as a last resort
+#   - init generate-crl init generate CA are destructive operations
+#     and will overwrite existing files & they are meant to be run once by initial setup
+#     or if you totally want to reset the PKI environment.
+#
+# Author: Felix C Frank 2024
+# Version: 0.9
+# Created: 27-12-24
+## feedback mailto:felix.c.frank@proton.me
+###############################################################################
 CONFIG_PATH="/etc/strongconn.conf"
 
 log() {
@@ -41,7 +109,7 @@ load_config() {
         error_exit "Configuration file not found at $CONFIG_PATH"
     fi
 
-    # Validate required variables
+#Validate required variables
     [[ -z "$CERT_DIR" ]] && error_exit "CERT_DIR is not set in the configuration file."
     [[ -z "$PRIVATE_DIR" ]] && error_exit "PRIVATE_DIR is not set in the configuration file."
     [[ -z "$CA_DIR" ]] && error_exit "CA_DIR is not set in the configuration file."
@@ -63,7 +131,7 @@ load_config() {
     [[ -z "$OCSP_KEY" ]] && error_exit "OCSP_KEY is not set in the configuration file."
     [[ -z "$OCSP_CERT" ]] && error_exit "OCSP_CERT is not set in the configuration file."
 
-    # Additional variables required for CA generation
+#Additional variables required for CA generation
     [[ -z "$COUNTRY" ]] && error_exit "COUNTRY is not set in the configuration file."
     [[ -z "$STATE" ]] && error_exit "STATE is not set in the configuration file."
     [[ -z "$CITY" ]] && error_exit "CITY is not set in the configuration file."
@@ -118,13 +186,13 @@ check_directories() {
     load_config
     log "Ensuring necessary directories exist..."
 
-    # Create parent directories first with proper permissions
+#Create parent directories first with proper permissions
     mkdir -p "/opt/pki" || error_exit "Failed to create pki directory"
     chmod 755 "/opt/pki"
     mkdir -p "/etc/swanctl" || error_exit "Failed to create swanctl directory"
     mkdir -p "/etc/ssl" || error_exit "Failed to create ssl directory"
 
-    # Create specific directories with proper ownership and permissions
+#Create specific directories with proper ownership and permissions
     mkdir -p "$CERT_DIR" || error_exit "Failed to create x509 directory $CERT_DIR"
     mkdir -p "$PRIVATE_DIR" || error_exit "Failed to create private directory $PRIVATE_DIR"
     chown root:root "$PRIVATE_DIR"
@@ -135,7 +203,7 @@ check_directories() {
     mkdir -p "$SERVER_CERT" || error_exit "Failed to create server cert directory $SERVER_CERT"
     mkdir -p "$SERVER_KEY" || error_exit "Failed to create server key directory $SERVER_KEY"
 
-    # Set appropriate permissions
+#Set appropriate permissions
     chmod 755 "/opt/pki" "$CERT_DIR" "$CA_DIR" "$CRL_DIR" "$SRL_DIR" "$SERVER_CERT"
     chmod 700 "$PRIVATE_DIR" "$SERVER_KEY"
 
@@ -158,7 +226,7 @@ check_directories() {
         "/var/lib/strongswan/tmp"
     )
 
-    # Create additional directories required for StrongSwan
+#Create additional directories required for StrongSwan
     for dir in "${additional_dirs[@]}"; do
         mkdir -p "$dir" || error_exit "Failed to create directory $dir"
     done
@@ -168,7 +236,7 @@ check_directories() {
 
 check_environment() {
     log "checking environment..."
-    # Check required commands
+#Check required commands
     for cmd in openssl certutil pk12util tar dig wget; do
         command -v "$cmd" >/dev/null 2>&1 || error_exit "$cmd is not installed"
     done
@@ -182,7 +250,7 @@ check_environment() {
 set_permissions() {
     log "Setting permissions, ACLs, and validating symlinks for /opt/pki and /etc/swanctl..."
 
-    # Base ownership and permissions
+#Base ownership and permissions
     chown -R root:root /opt/pki /etc/swanctl
     chmod 751 /etc/swanctl
     chmod 750 /etc/swanctl/private
@@ -195,15 +263,15 @@ set_permissions() {
     chmod 750 /opt/pki/private
     chmod 755 /opt/pki/x509
 
-    # Apply ACLs for StrongSwan
+#Apply ACLs for StrongSwan
     setfacl -Rm g:strongswan:rx /etc/swanctl || log "Failed to set ACL for StrongSwan on /etc/swanctl"
     setfacl -Rm g:strongswan:r /etc/swanctl/private /opt/pki/x509/ca.pem /opt/pki/x509/server.pem /opt/pki/x509/ocsp.pem /opt/pki/private/server-key.pem || log "Failed to set ACL for StrongSwan on private keys and certificates"
 
-    # Apply ACLs for OCSP
+#Apply ACLs for OCSP
     setfacl -Rm g:ocsp:rx /etc/swanctl/crls /etc/swanctl/ocsp /opt/pki/x509 /etc/swanctl/x509ca || log "Failed to set ACL for OCSP on necessary directories"
     setfacl -m g:ocsp:r /opt/pki/x509/ca.pem /opt/pki/private/ocsp-key.pem /opt/pki/x509/ocsp.pem /etc/swanctl/crls/index.txt /opt/pki/x509/server.pem || log "Failed to set ACL for OCSP on key and certificate files"
 
-    # Validate and recreate symlinks if necessary
+#Validate and recreate symlinks if necessary
     log "Validating and fixing symlinks..."
     declare -A symlinks=(
         ["/etc/swanctl/ocsp/crl.pem"]="/etc/swanctl/crls/crl.pem"
@@ -236,7 +304,7 @@ set_permissions() {
         fi
     done
 
-    # File-specific ACLs
+#File-specific ACLs
     local files_to_acl=(
         "/etc/swanctl/private/server-key.pem"
         "/etc/swanctl/x509/server.pem"
@@ -273,13 +341,13 @@ set_permissions() {
         fi
     done
 
-    # Handle /opt/pki permissions
+#Handle /opt/pki permissions
     setfacl -Rm g:ocsp:rx /opt/pki/private || log "Failed to set ACL for OCSP on /opt/pki/private"
     setfacl -m g:ocsp:r /opt/pki/private/ca-key.pem || log "Failed to set ACL for /opt/pki/private/ca-key.pem"
     setfacl -Rm g:strongswan:rx /opt/pki/x509 || log "Failed to set ACL for StrongSwan on /opt/pki/x509"
     setfacl -Rm g:ocsp:r /opt/pki/x509/ocsp.pem || log "Failed to set ACL for OCSP on /opt/pki/x509/ocsp.pem"
 
-    # Exclude unnecessary access
+#Exclude unnecessary access
     find /opt/pki/private -type f ! -name "ca-key.pem" -exec setfacl -x g:ocsp {} \;
     find /opt/pki/x509 -type f ! -name "ca.pem" ! -name "server.pem" ! -name "ocsp.pem" \
         -exec setfacl -x g:strongswan -x g:ocsp {} \;
@@ -296,18 +364,18 @@ generate_ca() {
     load_config
     print_variables
 
-    # Validate necessary variables
+#Validate necessary variables
     if [[ -z "$COUNTRY" || -z "$STATE" || -z "$CITY" || -z "$ORGANIZATION" || -z "$ORG_UNIT" || -z "$CA_DURATION" || -z "$CA_NAME" ]]; then
         error_exit "Required variables are not set in the configuration file. Aborting CA generation."
     fi
 
-    # Generate a strong random serial number
+#Generate a strong random serial number
     log "Generating a strong random serial number..."
     local SERIAL_NUMBER
     SERIAL_NUMBER=$(openssl rand -hex 16) || error_exit "Failed to generate random serial number."
     log "Generated Serial Number: $SERIAL_NUMBER"
 
-    # Generate CA private key
+#Generate CA private key
     if [[ ! -f "$CA_KEY" ]]; then
         log "Generating CA private key..."
         pki --gen --type rsa --size 4096 --outform pem > "$CA_KEY" || error_exit "Failed to generate CA private key."
@@ -317,7 +385,7 @@ generate_ca() {
         log "CA private key already exists at $CA_KEY."
     fi
 
-    # Generate self-signed CA certificate
+#Generate self-signed CA certificate
     if [[ ! -f "$CA_CERT" ]]; then
         log "Generating self-signed CA certificate..."
         pki --self --ca --lifetime "$CA_DURATION" \
@@ -332,7 +400,7 @@ generate_ca() {
         log "Generated CA certificate at $CA_CERT."
     fi
     log "Creating symlink for CA certificate in swanctl directory..."
-    # Add CA certificate to index.txt
+#Add CA certificate to index.txt
     log "Adding CA certificate to index.txt..."
     update_crl "add" "$CA_CERT" || error_exit "Failed to add CA certificate to CRL index."
     update_crl "full"
@@ -351,7 +419,7 @@ generate_server() {
     local SERVER_CSR_FILE="$TEMP_CERT_DIR/server.csr.pem"
     local SERVER_CERT_FILE="$CERT_DIR/server.pem"
 
-    # Generate server private key
+#Generate server private key
     if [[ ! -f "$SERVER_KEY_FILE" ]]; then
         log "Generating server private key..."
         pki --gen --type rsa --size 4096 --outform pem > "$SERVER_KEY_FILE" || error_exit "Failed to generate server private key."
@@ -361,19 +429,19 @@ generate_server() {
         log "Server private key already exists at $SERVER_KEY_FILE."
     fi
 
-    # Generate server CSR
+#Generate server CSR
     log "Generating server CSR..."
     pki --req --type priv --in "$SERVER_KEY_FILE" \
         --dn "C=$COUNTRY, ST=$STATE, L=$CITY, O=$ORGANIZATION, OU=$ORG_UNIT, CN=$PUBLIC_IP" \
         --san "IP:$PUBLIC_IP" \
         --outform pem > "$SERVER_CSR_FILE" || error_exit "Failed to generate server CSR."
 
-    # Generate a strong random serial number
+#Generate a strong random serial number
     local SERIAL_NUMBER
     SERIAL_NUMBER=$(openssl rand -hex 16) || error_exit "Failed to generate random serial number for server certificate."
     log "Generated Serial Number: $SERIAL_NUMBER"
 
-    # Issue server certificate
+#Issue server certificate
     log "Issuing server certificate..."
     pki --issue --cacert "$CA_CERT" --cakey "$CA_KEY" \
         --type pkcs10 --in "$SERVER_CSR_FILE" \
@@ -391,12 +459,12 @@ generate_server() {
     chmod 644 "$SERVER_CERT_FILE"
     log "Generated server certificate at $SERVER_CERT_FILE."
 
-    # Symlink server certificate for StrongSwan
+#Symlink server certificate for StrongSwan
 
     log "Adding server certificate to CRL index..."
     update_crl "add" "$SERVER_CERT_FILE" || error_exit "Failed to update CRL index with server certificate."
  
-    # Clean up
+#Clean up
     rm -f "$SERVER_CSR_FILE"
     set_permissions
     log "Server certificate generated successfully."
@@ -408,7 +476,7 @@ generate_ocsp_cert() {
     load_config
     print_variables
 
-    # Ensure CA key, certificate, and CRL infrastructure exist
+#Ensure CA key, certificate, and CRL infrastructure exist
     if [[ ! -f "$CA_KEY" || ! -f "$CA_CERT" ]]; then
         error_exit "CA key ($CA_KEY) or certificate ($CA_CERT) not found. Ensure CA is initialized before generating OCSP responder certificate."
     fi
@@ -417,12 +485,12 @@ generate_ocsp_cert() {
         error_exit "CRL index.txt file not found. Ensure CRL infrastructure is initialized."
     fi
 
-    # Define file paths
+#Define file paths
     local OCSP_CSR_FILE="$TEMP_CERT_DIR/ocsp.csr.pem"
     local OCSP_CERT_FILE="$CERT_DIR/ocsp.pem"
     local OCSP_KEY_FILE="$PRIVATE_DIR/ocsp-key.pem"
 
-    # Generate OCSP private key
+#Generate OCSP private key
     if [[ ! -f "$OCSP_KEY_FILE" ]]; then
         log "Generating OCSP private key..."
         pki --gen --type rsa --size 4096 --outform pem > "$OCSP_KEY_FILE" || error_exit "Failed to generate OCSP private key."
@@ -442,7 +510,7 @@ EOF
 
     log "Created OpenSSL configuration file at openssl_ocsp.cnf."
 
-    # Generate OCSP CSR
+#Generate OCSP CSR
     log "Generating OCSP CSR..."
     pki --req --type priv --in "$OCSP_KEY_FILE" \
         --dn "C=$COUNTRY, ST=$STATE, L=$CITY, O=$ORGANIZATION, OU=OCSP Responder, CN=$PUBLIC_IP" \
@@ -451,13 +519,13 @@ EOF
     chmod 644 "$OCSP_CSR_FILE"
     log "Generated OCSP CSR at $OCSP_CSR_FILE."
 
-    # Generate a strong random serial number for the OCSP certificate
+#Generate a strong random serial number for the OCSP certificate
     log "Generating a strong random serial number for the OCSP certificate..."
     local SERIAL_NUMBER
     SERIAL_NUMBER=$(openssl rand -hex 16) || error_exit "Failed to generate random serial number."
     log "Generated Serial Number: $SERIAL_NUMBER"
 
-    # Issue OCSP certificate
+#Issue OCSP certificate
     log "Issuing OCSP certificate..."
     log "Signing OCSP certificate with OpenSSL..."
        openssl x509 -req -in "$OCSP_CSR_FILE" \
@@ -471,16 +539,16 @@ EOF
     chmod 644 "$OCSP_CERT_FILE"
     log "OCSP certificate issued at $OCSP_CERT_FILE."
 
-    # Create symlink for OCSP certificate in swanctl directory
+#Create symlink for OCSP certificate in swanctl directory
     mkdir -p /etc/swanctl/ocsp
-    # Add OCSP certificate to CRL index
+#Add OCSP certificate to CRL index
     log "Adding OCSP certificate to CRL index..."
     openssl x509 -in "$OCSP_CERT_FILE" -noout || error_exit "Invalid OCSP certificate: $OCSP_CERT_FILE"
     update_crl "add" "$OCSP_CERT_FILE" || error_exit "Failed to update CRL index with OCSP certificate."
     update_crl "full"
     set_permissions
 
-    # Clean up
+#Clean up
     rm -f "$OCSP_CSR_FILE"
     log "OCSP responder certificate generated successfully."
 }
@@ -492,17 +560,17 @@ revoke_client() {
 
     log "Revoking client certificate for: $client_identifier..."
     
-    # Assume certificate path based on client name
+#Assume certificate path based on client name
     local cert_file
     if [[ "$client_identifier" =~ ^/ ]]; then
-        # If input starts with '/', assume it's a full path
+    #If input starts with '/', assume it's a full path
         cert_file="$client_identifier"
     else
-        # Assume it's a client name and construct the default path
+    #Assume it's a client name and construct the default path
         cert_file="/opt/pki/x509/${client_identifier}.pem"
     fi
 
-    # Check if the certificate file exists
+#Check if the certificate file exists
     if [[ ! -f "$cert_file" ]]; then
         log "Certificate file not found at default path: $cert_file"
         read -p "Please provide the full path to the certificate file for $client_identifier: " cert_file
@@ -511,7 +579,7 @@ revoke_client() {
         fi
     fi
 
-    # Prompt for revocation reason if not provided
+#Prompt for revocation reason if not provided
     if [[ -z "$2" ]]; then
         echo "Please provide the revocation reason (default: superseded):"
         echo "1) superseded"
@@ -559,13 +627,13 @@ generate_client() {
     local CLIENT_CERT_FILE="$CERT_DIR/${email}.pem"
     local CLIENT_CSR_FILE="$TEMP_CERT_DIR/${email}.csr.pem"
 
-    # Check if certificate already exists
+#Check if certificate already exists
     if [[ -f "$CLIENT_CERT_FILE" ]]; then
         log "Certificate already exists for client: $email. Skipping generation."
         return
     fi
 
-    # Generate private key
+#Generate private key
     if [[ ! -f "$CLIENT_KEY_FILE" ]]; then
         log "Generating client private key..."
         pki --gen --type rsa --size 4096 --outform pem > "$CLIENT_KEY_FILE" || \
@@ -575,20 +643,20 @@ generate_client() {
         log "Private key already exists for client: $email."
     fi
 
-    # Generate CSR
+#Generate CSR
     log "Generating client CSR..."
     pki --req --type priv --in "$CLIENT_KEY_FILE" \
         --dn "C=$COUNTRY, ST=$STATE, L=$CITY, O=$ORGANIZATION, OU=$ORG_UNIT, CN=$email" \
         --san "email:$email" \
         --outform pem > "$CLIENT_CSR_FILE" || error_exit "Failed to generate client CSR."
 
-    # Generate a unique serial number for the certificate
+#Generate a unique serial number for the certificate
     log "Generating a unique serial number for the client certificate..."
     local SERIAL_NUMBER
     SERIAL_NUMBER=$(openssl rand -hex 16) || error_exit "Failed to generate random serial number."
     log "Generated Serial Number: $SERIAL_NUMBER"
 
-    # Issue certificate
+#Issue certificate
     log "Issuing client certificate..."
     pki --issue --cacert "$CA_CERT" --cakey "$CA_KEY" \
         --type pkcs10 --in "$CLIENT_CSR_FILE" \
@@ -604,14 +672,14 @@ generate_client() {
     chmod 644 "$CLIENT_CERT_FILE"
     log "Client certificate generated at $CLIENT_CERT_FILE."
 
-    # Add certificate entry to index.txt via update_crl
+#Add certificate entry to index.txt via update_crl
     log "Adding client certificate to index.txt..."
     update_crl "add" "$CLIENT_CERT_FILE"  || error_exit "Failed to add client certificate to index.txt."
 
-    # Export bundle (if applicable)
+#Export bundle (if applicable)
     export_bundle "$email"
 
-    # Clean up CSR
+#Clean up CSR
     log "Cleaning up CSR..."
     rm -f "$CLIENT_CSR_FILE"
 
@@ -676,7 +744,7 @@ try {
 }
 EOF
 
-    # Log script creation
+#Log script creation
     echo "PowerShell script generated at $powershell_script"
 }
 
@@ -739,7 +807,7 @@ generate_custom_server() {
     load_config
     print_variables
 
-    # Paths for server key, CSR, and certificate
+#Paths for server key, CSR, and certificate
     local SERVER_KEY_FILE="/opt/pki/private/${DNS_NAME}.server-key.pem"
     local SERVER_CSR_FILE="$TEMP_CERT_DIR/${DNS_NAME}.server.csr.pem"
     local SERVER_CERT_FILE="/opt/pki/x509/${DNS_NAME}.server.pem"
@@ -753,10 +821,10 @@ generate_custom_server() {
         error_exit "DNS_NAME is not set. Aborting certificate generation."
     fi
 
-    # Ensure required directories exist
+#Ensure required directories exist
     mkdir -p "/opt/pki/private" "/opt/pki/x509" "/etc/swanctl/private" "/etc/swanctl/x509" "$TEMP_CERT_DIR"
 
-    # Generate private key
+#Generate private key
     if [[ ! -f "$SERVER_KEY_FILE" ]]; then
         log "Generating server private key in /opt/pki/private..."
         pki --gen --type rsa --size 4096 --outform pem > "$SERVER_KEY_FILE" || error_exit "Failed to generate server private key."
@@ -766,12 +834,12 @@ generate_custom_server() {
         log "Server private key already exists at $SERVER_KEY_FILE."
     fi
 
-    # Symlink private key to swanctl directory
+#Symlink private key to swanctl directory
     log "Creating symlink for server private key in /etc/swanctl/private..."
     ln -sf "$SERVER_KEY_FILE" "$SWANCTL_KEY_SYMLINK" || error_exit "Failed to create symlink for server private key."
     chmod 640 "$SWANCTL_KEY_SYMLINK"
 
-    # Generate CSR
+#Generate CSR
     if [[ ! -f "$SERVER_CSR_FILE" ]]; then
         log "Generating server CSR..."
         pki --req --type priv --in "$SERVER_KEY_FILE" \
@@ -782,7 +850,7 @@ generate_custom_server() {
         log "Server CSR already exists at $SERVER_CSR_FILE."
     fi
 
-    # Generate serial number and issue certificate
+#Generate serial number and issue certificate
     local SERIAL_NUMBER
     SERIAL_NUMBER=$(openssl rand -hex 16) || error_exit "Failed to generate random serial number."
     log "Generated Serial Number: $SERIAL_NUMBER"
@@ -805,12 +873,12 @@ generate_custom_server() {
         log "Server certificate already exists at $SERVER_CERT_FILE."
     fi
 
-    # Symlink certificate to swanctl directory
+#Symlink certificate to swanctl directory
     log "Creating symlink for server certificate in /etc/swanctl/x509..."
     ln -sf "$SERVER_CERT_FILE" "$SWANCTL_CERT_SYMLINK" || error_exit "Failed to create symlink for server certificate."
     chmod 644 "$SWANCTL_CERT_SYMLINK"
 
-    # Export and package PKCS#12
+#Export and package PKCS#12
     log "Exporting certificate and key to PKCS#12 format..."
     openssl pkcs12 -export \
         -out "$P12_FILE" \
@@ -823,7 +891,7 @@ generate_custom_server() {
     tar -czf "$TAR_FILE" -C "$OUTPUT_DIR" "$(basename "$P12_FILE")" || error_exit "Failed to create tar.gz archive."
     rm -f "$P12_FILE"
 
-    # Add certificate to index.txt
+#Add certificate to index.txt
     log "Adding server certificate to index.txt..."
     update_crl add "$SERVER_CERT_FILE" || error_exit "Failed to add server certificate to index.txt."
     set_permissions
@@ -863,13 +931,13 @@ generate_sswan_file() {
     CLIENT_CERT_B64=$(base64 -w 0 "$client_cert_file")
     CLIENT_KEY_B64=$(base64 -w 0 "$client_key_file")
 
-    # check if base64 encoding was successful
+#check if base64 encoding was successful
     if [[ -z "$CA_CERT_B64" || -z "$CLIENT_CERT_B64" || -z "$CLIENT_KEY_B64" ]]; then
         echo "Error: Failed to base64-encode one or more certificate/key files."
         exit 1
     fi
 
-    # Create the .sswan JSON file with encoded data
+#Create the .sswan JSON file with encoded data
     bash -c "cat > '$SSWAN_FILE'" <<SWEOF
 {
     "uuid": "$UUID",
@@ -907,7 +975,7 @@ generate_sswan_file() {
 }
 SWEOF
 
-    # Set ownership and permissions
+#Set ownership and permissions
     chown root:root "$SSWAN_FILE"
     chmod 600 "$SSWAN_FILE"
 
@@ -919,19 +987,19 @@ SWEOF
 init_openssl_config() {
     log "Initializing OpenSSL configuration..."
 
-    # Load configuration variables
+#Load configuration variables
     load_config
     print_variables
 
-    # Define the OpenSSL configuration file path
+#Define the OpenSSL configuration file path
     local openssl_conf="/etc/ssl/openssl.cnf"
 
-    # Backup existing OpenSSL configuration if it exists
+#Backup existing OpenSSL configuration if it exists
     if [[ -f "$openssl_conf" ]]; then
         cp "$openssl_conf" "${openssl_conf}.bak" || error_exit "Failed to backup existing OpenSSL configuration."
     fi
 
-    # Generate a new OpenSSL configuration file
+#Generate a new OpenSSL configuration file
     cat > "$openssl_conf" <<EOF
 [ ca ]
 default_ca = CA_default
@@ -997,7 +1065,7 @@ OCSPResponderCert  = $OCSP_CERT
 OCSPResponderKey   = $OCSP_KEY
 EOF
 
-    # Set ownership and permissions
+#Set ownership and permissions
     chmod 644 "$openssl_conf"
     chown root:root "$openssl_conf"
 
@@ -1014,7 +1082,7 @@ generate_mobileconfig() {
     local p12_password="$PFX_PASSWORD"
     local p12_file_enc="$export_dir$client_name.p12"
 
-    # Load variables from strongconn.conf
+#Load variables from strongconn.conf
     CONFIG_PATH="/etc/strongconn.conf"
     source "$CONFIG_PATH"
 
@@ -1042,7 +1110,7 @@ generate_mobileconfig() {
         uuid_main=$(uuidgen)
     done
 
-    # Create mobileconfig file
+#Create mobileconfig file
     local mc_file="$export_dir$client_name.mobileconfig"
     cat > "$mc_file" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -1274,7 +1342,7 @@ DNS.1 = ${dns_name}
 IP.1  = ${PUBLIC_IP}
 CEOF
     else
-        # For third-party CSRs, omit authorityInfoAccess
+    #For third-party CSRs, omit authorityInfoAccess
         cat >> "${CSR_CONFIG}" <<CEOF
 [ alt_names ]
 DNS.1 = ${dns_name}
@@ -1292,23 +1360,23 @@ CEOF
 init_db() {
     log "Initializing swanctl directories and preparing OpenSSL environment..."
 
-    # Load the configuration file and print variables
+#Load the configuration file and print variables
     load_config
     print_variables
 
-    # Create primary directories with proper permissions
+#Create primary directories with proper permissions
     log "Creating primary directories..."
     mkdir -p "$TEMP_CERT_DIR" "$CERT_DIR" "$PRIVATE_DIR" "$CA_DIR" "$CRL_DIR" "$SRL_DIR" || \
         error_exit "Failed to create required directories."
 
-    # Set permissions and ownership for primary directories
+#Set permissions and ownership for primary directories
     chmod 750 "$PRIVATE_DIR"
     chmod 755 "$TEMP_CERT_DIR" "$CERT_DIR" "$CA_DIR" "$CRL_DIR" "$SRL_DIR"
     chown -R root:root "$TEMP_CERT_DIR" "$CERT_DIR" "$PRIVATE_DIR" "$CA_DIR" "$CRL_DIR" "$SRL_DIR"
     chown -R root:ocsp "$OCSP_DIR"
     sudo chmod 710 /opt/pki/private
     sudo chown root:ocsp /opt/pki/private
-    # Create additional directories required for StrongSwan
+#Create additional directories required for StrongSwan
     local additional_dirs=(
         "/etc/swanctl/x509ocsp"
         "/etc/swanctl/x509aa"
@@ -1330,15 +1398,15 @@ init_db() {
         mkdir -p "$dir" || error_exit "Failed to create additional directory: $dir."
     done
 
-    # Set permissions for additional directories
+#Set permissions for additional directories
     chmod 755 /etc/swanctl/x509* /opt/pki/x509
     chmod 700 /opt/pki/private
 
-    # Initialize CRL infrastructure
+#Initialize CRL infrastructure
     log "Initializing CRL database and number files..."
    
 
-    # Initialize the OpenSSL configuration
+#Initialize the OpenSSL configuration
     init_openssl_config
     cat <<EOF > /etc/swanctl/crls/index.txt.attr
 unique_subject = no
@@ -1360,7 +1428,7 @@ list_certs() {
     ca_file="$CA_DIR/ca.pem"
     crl_file="$CRL_DIR/crl.pem"
 
-    # Verify the CRL file exists
+#Verify the CRL file exists
     if [[ ! -f "$crl_file" ]]; then
         error_exit "CRL file not found: $crl_file. Please generate or update the CRL."
     fi
@@ -1369,12 +1437,12 @@ list_certs() {
     printf "| %-15s | %-15s | %-15s | %-15s | %-15s | %-15s | %-15s |\n" "Filename" "CName" "Valid From" "Valid To" "EKU" "Status" "Issuer"
     echo "+-----------------+-----------------+-----------------+-----------------+-----------------+-----------------+-----------------+"
 
-    # Function to check certificate status against CRL
+#Function to check certificate status against CRL
     check_cert_status() {
         local cert_file="$1"
         local status
 
-        # Verify the certificate against the CRL
+    #Verify the certificate against the CRL
         if openssl verify -CAfile "$ca_file" -crl_check -CRLfile "$crl_file" "$cert_file" >/dev/null 2>&1; then
             status="Valid"
         else
@@ -1413,7 +1481,7 @@ list_certs() {
 rebuild_crl() {
     log "Starting CRL rebuild process..."
 
-    # Directories to scan
+#Directories to scan
     local scan_dirs=("/etc/swanctl" "/opt/pki")
     local cert_dir="/opt/pki/x509"
     local key_dir="/opt/pki/private"
@@ -1424,9 +1492,9 @@ rebuild_crl() {
     timestamp=$(date +"%Y%m%d_%H%M%S")
     local backup_file="$backup_dir/crl_backup_$timestamp.tar.gz"
 
-    # -----------------------------------
-    # Backup Existing CRL Files
-    # -----------------------------------
+#-----------------------------------
+#Backup Existing CRL Files
+#-----------------------------------
     if [[ -f "$crl_index_file" || -f "$crl_number_file" ]]; then
         log "Backing up existing CRL-related files to: $backup_file"
         mkdir -p "$backup_dir"
@@ -1435,20 +1503,20 @@ rebuild_crl() {
         log "Backup completed successfully."
     fi
 
-    # Ensure necessary directories exist
+#Ensure necessary directories exist
     log "Ensuring necessary directories and files exist..."
     mkdir -p "$CRL_DIR"
     touch "$crl_index_file" "$crl_number_file"
     [[ ! -s "$crl_number_file" ]] && echo "01" > "$crl_number_file"
 
-    # Clear existing files
+#Clear existing files
     log "Clearing existing CRL-related files..."
     >"$crl_index_file"
     echo "01" >"$crl_number_file"
 
-    # -----------------------------------
-    # Identify the Active CA
-    # -----------------------------------
+#-----------------------------------
+#Identify the Active CA
+#-----------------------------------
     log "Scanning for active CA certificate and key..."
     local ca_cert=""
     local ca_key=""
@@ -1467,14 +1535,14 @@ rebuild_crl() {
     log "Active CA certificate: $ca_cert"
     log "Active CA key: $ca_key"
 
-    # -----------------------------------
-    # Scan All Certificates
-    # -----------------------------------
+#-----------------------------------
+#Scan All Certificates
+#-----------------------------------
     log "Scanning directories for certificates issued by the active CA..."
     local certs=()
     for dir in "${scan_dirs[@]}"; do
         while IFS= read -r -d '' cert; do
-            # Verify if the certificate was issued by the active CA
+        #Verify if the certificate was issued by the active CA
             if openssl verify -CAfile "$ca_cert" "$cert" > /dev/null 2>&1; then
                 log "Valid certificate found: $cert"
                 certs+=("$cert")
@@ -1488,9 +1556,9 @@ rebuild_crl() {
         error_exit "No certificates issued by the active CA were found."
     fi
 
-    # -----------------------------------
-    # Rebuild the index.txt
-    # -----------------------------------
+#-----------------------------------
+#Rebuild the index.txt
+#-----------------------------------
     log "Rebuilding CRL index file: $crl_index_file"
     echo -e "# OpenSSL CRL index file\n#<status>\t<expiration>\t<revocation>\t<serial>\t<file>\t<subject>" > "$crl_index_file"
 
@@ -1510,14 +1578,14 @@ rebuild_crl() {
 
 
 update_crl() {
-    local action="$1"        # "init", "add", "full", or "revoke"
-    local cert_file="$2"     # Path to the certificate file for "add" or "revoke"
+    local action="$1"    #"init", "add", "full", or "revoke"
+    local cert_file="$2" #Path to the certificate file for "add" or "revoke"
     local reason="${3:-unspecified}"  # Default revocation reason
 
     log "Starting CRL update process (Action: $action)..."
     load_config
 
-    # Define file paths
+#Define file paths
     local crl_index_file="$CRL_DIR/index.txt"
     local crl_number_file="$CRL_DIR/crlnumber"
     local der_crl_file="$CRL_DIR/ca.crl"
@@ -1525,7 +1593,7 @@ update_crl() {
     local strongswan_crl_link="/etc/swanctl/x509crl/crl.pem"
     local nginx_crl_link="/etc/nginx/crl/ca.crl"
 
-    # Ensure necessary directories and files exist
+#Ensure necessary directories and files exist
     log "Ensuring necessary directories and files exist..."
     mkdir -p "$CRL_DIR" /etc/swanctl/x509crl /etc/nginx/crl
     touch "$crl_index_file" "$crl_number_file"
@@ -1535,13 +1603,13 @@ update_crl() {
         log "Initializing CRL index and number files..."
         mkdir -p "$CRL_DIR"
 
-        # Initialize crlnumber file
+    #Initialize crlnumber file
         echo "01" > "$CRL_DIR/crlnumber"
 
-        # Initialize index.txt file
+    #Initialize index.txt file
         echo -e "# OpenSSL CRL index file\n#<status>\t<expiration>\t<revocation>\t<serial>\t<file>\t<subject>" > "$CRL_DIR/index.txt"
 
-        # Initialize ca.srl file
+    #Initialize ca.srl file
         if [[ ! -f "$CRL_DIR/ca.srl" ]]; then
             echo "01" > "$CRL_DIR/ca.srl" || error_exit "Failed to initialize ca.srl file."
         fi
@@ -1553,7 +1621,7 @@ update_crl() {
     if [[ "$action" == "add" && -n "$cert_file" ]]; then
         log "Adding new certificate entry to index.txt for: $cert_file..."
 
-        # Validate certificate file
+    #Validate certificate file
         if [[ ! -f "$cert_file" ]]; then
             error_exit "Certificate file $cert_file does not exist!"
         fi
@@ -1580,7 +1648,7 @@ update_crl() {
     if [[ "$action" == "revoke" && -n "$cert_file" ]]; then
         log "Revoking certificate: $cert_file..."
 
-        # Validate certificate file
+    #Validate certificate file
         if [[ ! -f "$cert_file" ]]; then
             error_exit "Certificate file $cert_file does not exist!"
         fi
@@ -1589,7 +1657,7 @@ update_crl() {
         serial=$(openssl x509 -in "$cert_file" -serial -noout | cut -d'=' -f2 | tr '[:lower:]' '[:upper:]')
         revocation_date=$(date -u +"%y%m%d%H%M%SZ")
 
-        # Map reason to OpenSSL-compatible terms
+    #Map reason to OpenSSL-compatible terms
         case "$reason" in
             superseded)
                 reason_code="superseded"
@@ -1614,7 +1682,7 @@ update_crl() {
                 ;;
         esac
 
-        # Check if the serial exists in index.txt
+    #Check if the serial exists in index.txt
         if grep -iq "$serial" "$crl_index_file"; then
             local line expire_date serial_field subject_field
             line=$(grep -i "$serial" "$crl_index_file")
@@ -1622,10 +1690,10 @@ update_crl() {
             serial_field=$(echo "$line" | awk -F'\t' '{print $4}')
             subject_field=$(echo "$line" | awk -F'\t' '{print $6}')
 
-            # Remove old line
+        #Remove old line
             sed -i "/$serial/I d" "$crl_index_file"
 
-            # Add revoked line with reason
+        #Add revoked line with reason
             printf "R\t%s\t%s,%s\t%s\tunknown\t%s\n" "$expire_date" "$revocation_date" "$reason_code" "$serial_field" "$subject_field" >> "$crl_index_file"
             log "Certificate revoked successfully with reason: $reason."
         else
@@ -1637,23 +1705,23 @@ update_crl() {
     if [[ "$action" == "full" ]]; then
         log "Generating updated CRL using OpenSSL..."
 
-        # Generate the CRL in PEM format
+    #Generate the CRL in PEM format
         if ! openssl ca -gencrl -config /etc/ssl/openssl.cnf -out "$pem_crl_file"; then
             error_exit "Failed to generate updated CRL."
         fi
 
         log "Converting updated CRL to DER format..."
-        # Convert the CRL from PEM to DER format
+    #Convert the CRL from PEM to DER format
         if ! openssl crl -in "$pem_crl_file" -outform DER -out "$der_crl_file"; then
             error_exit "Failed to convert CRL to DER format."
         fi
 
         log "Updating symlinks for CRL..."
-        # Update symlinks to point to the latest CRL files
+    #Update symlinks to point to the latest CRL files
         ln -sf "$pem_crl_file" "$strongswan_crl_link"
         ln -sf "$der_crl_file" "$nginx_crl_link"
 
-        # Optional service restart
+    #Optional service restart
         if [[ "$RESTART_SERVICES" == "true" ]]; then
             log "Restarting dependent services..."
             systemctl reload nginx || log "Failed to reload NGINX."
@@ -1668,12 +1736,12 @@ update_crl() {
     if [[ "$action" == "verify" ]]; then
         log "Verifying CRL integrity..."
 
-        # Ensure CRL file exists
+    #Ensure CRL file exists
         if [[ ! -f "$pem_crl_file" ]]; then
             error_exit "PEM CRL file not found: $pem_crl_file"
         fi
 
-        # Verify the CRL
+    #Verify the CRL
         if openssl crl -in "$pem_crl_file" -inform PEM -noout -text; then
             log "CRL verification successful."
         else
@@ -1741,7 +1809,7 @@ case $1 in
                 reason="$4"
             fi
 
-            # Check if the certificate file exists before passing it to update_crl
+        #Check if the certificate file exists before passing it to update_crl
             if [[ ! -f "$cert_file" ]]; then
                 error_exit "Certificate file not found: $cert_file"
             fi
